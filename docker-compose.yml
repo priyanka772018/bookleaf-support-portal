@@ -1,0 +1,27 @@
+# One-command local run:  docker compose up --build   → http://localhost:4000
+# Add ANTHROPIC_API_KEY to a root .env file (or your shell) to enable AI.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: bookleaf
+      POSTGRES_PASSWORD: bookleaf
+      POSTGRES_DB: bookleaf
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bookleaf"]
+      interval: 3s
+      retries: 10
+  app:
+    build: .
+    ports: ["4000:4000"]
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      DATABASE_URL: postgres://bookleaf:bookleaf@db:5432/bookleaf
+      JWT_SECRET: local-docker-secret-change-me
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-claude-haiku-5-5}
+      CORS_ORIGIN: http://localhost:4000
+volumes:
+  pgdata:

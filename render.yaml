@@ -1,0 +1,29 @@
+# Render Blueprint: New → Blueprint → select this repo. Creates the Postgres DB and the web service.
+# After the first deploy, set ANTHROPIC_API_KEY in the service's Environment tab.
+databases:
+  - name: bookleaf-db
+    plan: free
+    databaseName: bookleaf
+    user: bookleaf
+
+services:
+  - type: web
+    name: bookleaf-support-portal
+    runtime: node
+    plan: free
+    buildCommand: npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        fromDatabase: { name: bookleaf-db, property: connectionString }
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: AI_MODEL
+        value: claude-haiku-5-5

@@ -1,0 +1,15 @@
+{
+  "name": "bookleaf-support-portal",
+  "private": true,
+  "description": "BookLeaf Author Support & Communication Portal — React + Express + PostgreSQL + Claude",
+  "scripts": {
+    "install:all": "npm --prefix server ci && npm --prefix client ci --include=dev",
+    "build": "npm run install:all && npm --prefix client run build",
+    "start": "npm --prefix server start",
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "setup:db": "npm --prefix server run setup",
+    "test": "npm --prefix server test"
+  },
+  "engines": { "node": ">=20" }
+}
