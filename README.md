@@ -2,9 +2,9 @@
 
 A web app with two interfaces — an **Author Portal** and an **Admin Support Desk** — where AI triages every incoming ticket and drafts a policy-accurate reply for a human agent to review and send.
 
-**Stack:** React 19 (Vite) · Node.js / Express 5 · PostgreSQL · Anthropic Claude (Haiku) · Server-Sent Events
+**Stack:** React 19 (Vite) · Node.js / Express 5 · PostgreSQL · Anthropic Claude Haiku (or Google Gemini) · Server-Sent Events
 
-> **Live demo:** _add your deployed URL here_ · **API docs:** `<demo-url>/api/docs` · **Write-up:** [WRITEUP.md](WRITEUP.md)
+> **Live demo:** [https://bookleaf-support-portal-lvws.onrender.com](https://bookleaf-support-portal-lvws.onrender.com) · **API docs:** [https://bookleaf-support-portal-lvws.onrender.com/api/docs](https://bookleaf-support-portal-lvws.onrender.com/api/docs) · **Write-up:** [WRITEUP.md](WRITEUP.md)
 
 ### Test logins
 
@@ -42,7 +42,7 @@ Every author email in `bookleaf_sample_data.json` works with `Author@123`. Usefu
 
 **Option A — Docker (one command)**
 ```bash
-echo "ANTHROPIC_API_KEY=sk-ant-..." > .env   # optional; the app works without it
+echo "ANTHROPIC_API_KEY=sk-ant-..." > .env   # or GEMINI_API_KEY=AIza... — optional; the app works without either
 docker compose up --build                    # → http://localhost:4000
 ```
 
@@ -54,7 +54,7 @@ createdb -O bookleaf bookleaf
 createdb -O bookleaf bookleaf_test   # only needed for tests
 
 # 2. Config
-cp server/.env.example server/.env   # set ANTHROPIC_API_KEY (optional)
+cp server/.env.example server/.env   # set ANTHROPIC_API_KEY or GEMINI_API_KEY (optional)
 
 # 3. Install, migrate, seed
 npm run install:all
@@ -66,7 +66,7 @@ npm run dev:client                   # UI on :5173 (proxies /api to :4000)
 ```
 The server also migrates and seeds itself on boot (idempotent), so a fresh database is ready with zero manual steps. `npm --prefix server run seed -- --reset` wipes tickets and restores the demo queue.
 
-**Without an API key** the app runs fully: new tickets get keyword-based triage and admins get policy-template drafts (clearly labelled). Add the key to switch on Claude.
+**Without an API key** the app runs fully: new tickets get keyword-based triage and admins get policy-template drafts (clearly labelled). Add either key to switch on AI — the provider is picked from whichever key is set.
 
 ---
 
@@ -117,6 +117,8 @@ client/src
 ### Model choice — Claude Haiku (`claude-haiku-5-5`, configurable via `AI_MODEL`)
 Both tasks — classifying a short ticket and writing a ~200-word, policy-grounded reply — are well within a small model's ability, and support traffic is high-volume and latency-sensitive (an agent waits for the draft). Haiku is Anthropic's fastest, cheapest tier, it supports forced **tool use** (reliable structured output) and **prompt caching**. Swapping in a larger model for drafts only is a one-line env change if quality ever needs it.
 
+**Alternative provider — Google Gemini Flash-Lite** (`AI_PROVIDER=gemini`, `GEMINI_API_KEY`, `GEMINI_MODEL`). Supported for two reasons: it has a free tier, which makes the hosted demo zero-cost to run, and it proves the AI layer isn't locked to one vendor. `ai/gemini.js` is a ~100-line adapter that maps the same request (system prompt, user message, one forced tool) onto Gemini's forced function calling and normalises the response and token usage. Prompts, validation, fallbacks, caching, the circuit breaker and cost logging are shared, so behaviour is identical apart from the model. The adapter also accepts a JSON-text answer if a model skips the function call, and gives extra `maxOutputTokens` headroom because newer Gemini models may spend output tokens reasoning before they answer. Trade-off: free-tier rate limits are low (a few requests per minute); hitting them simply triggers the normal retry → fallback path.
+
 ### Two AI features, two different prompts
 
 **1. Triage (category + priority) — one call, on ticket creation**
@@ -158,7 +160,7 @@ The draft tool returns the reply **plus an `admin_checklist`** — things the ag
 - **Observability:** every call is logged to `ai_calls` (tokens in/out, cache reads, latency, error). The admin **AI Usage** page shows calls, failures, estimated spend and the share of replies started from an AI draft — the metric that tells you whether the drafts are actually useful.
 
 ### Security
-- The key is read only from `ANTHROPIC_API_KEY` in `config/env.js` and used only in `ai/provider.js`. It's never sent to the browser, logged, or committed (`.env` is git-ignored; `.env.example` has no secrets). The browser only ever calls our API.
+- Keys are read only from `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` in `config/env.js` and used only in `ai/provider.js` / `ai/gemini.js` (the Gemini key goes in the `x-goog-api-key` header, never the URL). They're never sent to the browser, logged, or committed (`.env` is git-ignored; `.env.example` has no secrets). The browser only ever calls our API.
 - Author-written text is wrapped in tagged blocks the prompt declares as author content; tool-forced output means a prompt-injected ticket can at worst produce an odd draft, which a human reviews before sending.
 
 ---
@@ -223,9 +225,9 @@ Status codes: `400` validation · `401` unauthenticated/expired · `403` wrong r
 ## 6. Testing
 
 ```bash
-npm test     # 31 tests: node:test + supertest against a real Postgres test DB, with a mock AI provider
+npm test     # 36 tests: node:test + supertest against a real Postgres test DB, with a mock AI provider
 ```
-Covered: login/validation/401s; RBAC (authors only see their own books/tickets, 404 on others, 403 cross-role); ticket lifecycle; AI success, **provider outage**, **malformed output**, **circuit breaker** (only 3 of 5 calls reach the provider); admin overrides surviving re-classification; draft prompt contains only the relevant KB section and the computed OVERDUE flag; draft cache (second open = no LLM call); internal notes never reaching authors or their SSE stream; re-open/closed rules; queue filters, ref search and urgency sort; payout-schedule maths, threshold roll-over and production-stage facts; rule classifier on the brief's sample queries.
+Covered: login/validation/401s; RBAC (authors only see their own books/tickets, 404 on others, 403 cross-role); ticket lifecycle; AI success, **provider outage**, **malformed output**, **circuit breaker** (only 3 of 5 calls reach the provider); admin overrides surviving re-classification; draft prompt contains only the relevant KB section and the computed OVERDUE flag; draft cache (second open = no LLM call); internal notes never reaching authors or their SSE stream; re-open/closed rules; queue filters, ref search and urgency sort; payout-schedule maths, threshold roll-over and production-stage facts; rule classifier on the brief's sample queries; the Gemini adapter's request shape, key-in-header, response parsing, rate-limit retry and bad-key handling (mocked network).
 
 The real Anthropic SDK code path was also exercised end-to-end against a local stub of the Messages API (request shape, forced tool choice, cache control, usage logging), and the full author ↔ admin flow (including the live update without refresh) was verified in a headless browser.
 
@@ -235,16 +237,19 @@ The real Anthropic SDK code path was also exercised end-to-end against a local s
 
 The repo deploys as **one web service + one Postgres** on any Node host.
 
-**Render (blueprint included):** New → Blueprint → pick the repo → it creates `bookleaf-db` and the web service from `render.yaml` (build `npm run build`, start `npm start`, health check `/api/health`, generated `JWT_SECRET`). Then add `ANTHROPIC_API_KEY` in the service's Environment tab. Migrations and seeding run on boot.
+**Render (blueprint included):** New → Blueprint → pick the repo → it creates `bookleaf-db` and the web service from `render.yaml` (build `npm run build`, start `npm start`, health check `/api/health`, generated `JWT_SECRET`). Then add `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` in the service's Environment tab. Migrations and seeding run on boot.
 
-**Railway / Fly / a VPS:** use the `Dockerfile`, or `npm run build && npm start` with `DATABASE_URL`, `JWT_SECRET`, `ANTHROPIC_API_KEY` (and `DATABASE_SSL=true` if your provider requires SSL).
+**Railway / Fly / a VPS:** use the `Dockerfile`, or `npm run build && npm start` with `DATABASE_URL`, `JWT_SECRET`, `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` (and `DATABASE_SSL=true` if your provider requires SSL).
 
 | Variable | Required | Notes |
 |---|---|---|
 | `DATABASE_URL` | yes | Postgres connection string |
 | `JWT_SECRET` | yes (prod) | Long random string |
-| `ANTHROPIC_API_KEY` | no | Enables AI; without it the app uses fallbacks |
-| `AI_MODEL` | no | Default `claude-haiku-5-5` |
+| `ANTHROPIC_API_KEY` | no | Enables AI with Claude; without any key the app uses fallbacks |
+| `AI_MODEL` | no | Claude model, default `claude-haiku-5-5` |
+| `GEMINI_API_KEY` | no | Use Google Gemini instead (free key: aistudio.google.com/apikey) |
+| `GEMINI_MODEL` | no | Default `gemini-3.5-flash-lite` |
+| `AI_PROVIDER` | no | `anthropic` \| `gemini` \| `disabled`; inferred from the key if unset |
 | `AI_TIMEOUT_MS`, `AI_MAX_RETRIES` | no | Defaults 15000, 2 |
 | `AI_INPUT_COST_PER_MTOK`, `AI_OUTPUT_COST_PER_MTOK` | no | Only for the spend estimate on the AI Usage page |
 | `DATABASE_SSL` | no | `true` for providers that require it |

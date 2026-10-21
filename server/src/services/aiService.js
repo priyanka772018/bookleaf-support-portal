@@ -10,7 +10,7 @@ import { notFound } from '../utils/errors.js';
 import { classifyTicket } from '../ai/classifier.js';
 import { generateDraft } from '../ai/drafter.js';
 import { buildAccountFacts, bookFacts } from '../ai/accountFacts.js';
-import { aiEnabled, circuitState } from '../ai/provider.js';
+import { activeModel, aiEnabled, circuitState } from '../ai/provider.js';
 import { getAuthor, getBooksRaw } from './bookService.js';
 import { getTicketRow, getMessages } from './ticketService.js';
 import { publish } from './events.js';
@@ -118,7 +118,7 @@ export async function getOrCreateDraft(ticketId, { force = false } = {}) {
     `INSERT INTO ai_drafts (ticket_id, content, admin_checklist, source, model, failure_reason, message_count)
      VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
     [ticketId, draft.reply, JSON.stringify(draft.admin_checklist ?? []), draft.source,
-      draft.source === 'ai' ? config.ai.model : null, draft.failureReason ?? null, messages.length]);
+      draft.source === 'ai' ? activeModel() : null, draft.failureReason ?? null, messages.length]);
   return toDraftView(saved, { cached: false });
 }
 
@@ -126,7 +126,7 @@ export async function getOrCreateDraft(ticketId, { force = false } = {}) {
 // Usage & health
 // ---------------------------------------------------------------------------
 export function aiHealth() {
-  return { enabled: aiEnabled(), provider: config.ai.provider, model: config.ai.model, circuit: circuitState() };
+  return { enabled: aiEnabled(), provider: config.ai.provider, model: activeModel(), circuit: circuitState() };
 }
 
 export async function usageReport({ days = 30 } = {}) {
@@ -149,7 +149,7 @@ export async function usageReport({ days = 30 } = {}) {
   const byPurpose = rows.map((r) => ({ ...r, estimated_cost_usd: Number(cost(r).toFixed(5)) }));
   return {
     windowDays: days,
-    model: config.ai.model,
+    model: activeModel(),
     byPurpose,
     totals: {
       calls: byPurpose.reduce((n, r) => n + r.calls, 0),

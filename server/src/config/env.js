@@ -32,11 +32,15 @@ export const config = {
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
 
   ai: {
-    // 'anthropic' in normal operation; 'disabled' forces the rule-based fallback
-    // path; 'mock' is used by the test-suite.
-    provider: process.env.AI_PROVIDER || (process.env.ANTHROPIC_API_KEY ? 'anthropic' : 'disabled'),
+    // 'anthropic' | 'gemini' in normal operation; 'disabled' forces the rule-based
+    // fallback path; 'mock' is used by the test-suite. If AI_PROVIDER is unset,
+    // the provider is inferred from whichever API key is present.
+    provider: process.env.AI_PROVIDER
+      || (process.env.ANTHROPIC_API_KEY ? 'anthropic' : process.env.GEMINI_API_KEY ? 'gemini' : 'disabled'),
     apiKey: process.env.ANTHROPIC_API_KEY || '',
     model: process.env.AI_MODEL || 'claude-haiku-5-5',
+    geminiApiKey: process.env.GEMINI_API_KEY || '',
+    geminiModel: process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite',
     timeoutMs: Number(process.env.AI_TIMEOUT_MS || 15000),
     maxRetries: Number(process.env.AI_MAX_RETRIES || 2),
     // USD per million tokens — used only to estimate spend in the admin AI-usage panel.

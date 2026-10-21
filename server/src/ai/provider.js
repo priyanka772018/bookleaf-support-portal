@@ -1,5 +1,6 @@
 /**
- * Thin wrapper around the LLM provider. Responsibilities:
+ * Thin wrapper around the LLM provider (Anthropic Claude by default, Google
+ * Gemini optional — see gemini.js). Responsibilities:
  *  - the ONLY place the API key is used (server-side, from env)
  *  - timeouts + bounded retries (SDK retries 429/5xx with exponential backoff)
  *  - a circuit breaker: after N consecutive failures we stop calling the API for
@@ -13,6 +14,12 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { config } from '../config/env.js';
 import { query } from '../db/pool.js';
+import { callGemini, GeminiError } from './gemini.js';
+
+/** Model id of the active provider (for logging and the usage page). */
+export function activeModel() {
+  return config.ai.provider === 'gemini' ? config.ai.geminiModel : config.ai.model;
+}
 
 let client = null;
 function getClient() {
@@ -47,7 +54,9 @@ export function setMockHandler(fn) { mockHandler = fn; }
 
 export function aiEnabled() {
   if (config.ai.provider === 'mock') return true;
-  return config.ai.provider === 'anthropic' && Boolean(config.ai.apiKey);
+  if (config.ai.provider === 'anthropic') return Boolean(config.ai.apiKey);
+  if (config.ai.provider === 'gemini') return Boolean(config.ai.geminiApiKey);
+  return false;
 }
 
 async function logCall({ ticketId, purpose, status, usage = {}, latencyMs, error }) {
@@ -56,7 +65,7 @@ async function logCall({ ticketId, purpose, status, usage = {}, latencyMs, error
       `INSERT INTO ai_calls (ticket_id, purpose, model, status, input_tokens, output_tokens,
          cache_read_tokens, latency_ms, error)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-      [ticketId ?? null, purpose, config.ai.model, status, usage.input_tokens ?? 0,
+      [ticketId ?? null, purpose, activeModel(), status, usage.input_tokens ?? 0,
         usage.output_tokens ?? 0, usage.cache_read_input_tokens ?? 0, latencyMs ?? null,
         error ? String(error).slice(0, 500) : null],
     );
@@ -67,6 +76,7 @@ async function logCall({ ticketId, purpose, status, usage = {}, latencyMs, error
 }
 
 function describeError(err) {
+  if (err instanceof GeminiError) return err.reason;
   if (err instanceof Anthropic.RateLimitError) return 'rate_limited';
   if (err instanceof Anthropic.APIConnectionTimeoutError) return 'timeout';
   if (err instanceof Anthropic.APIConnectionError) return 'connection_error';
@@ -112,6 +122,8 @@ export async function callTool({ purpose, ticketId, system, user, tool, maxToken
       if (!mockHandler) throw new Error('mock handler not configured');
       toolInput = await mockHandler({ purpose, request });
       usage = { input_tokens: Math.ceil(JSON.stringify(request).length / 4), output_tokens: 50 };
+    } else if (config.ai.provider === 'gemini') {
+      ({ toolInput, usage } = await callGemini({ system, user, tool, maxTokens, temperature }));
     } else {
       const response = await getClient().messages.create(request);
       usage = response.usage ?? {};
