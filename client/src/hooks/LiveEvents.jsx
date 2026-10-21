@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { connectLiveEvents } from '../api/liveEvents';
 import { useAuth } from '../auth/AuthContext';
 
@@ -19,7 +19,7 @@ export function LiveEventsProvider({ children }) {
     });
   }, [user]);
 
-  const subscribe = (fn) => { listeners.current.add(fn); return () => listeners.current.delete(fn); };
+  const subscribe = useCallback((fn) => { listeners.current.add(fn); return () => listeners.current.delete(fn); }, []);
   return <LiveContext.Provider value={{ status, subscribe }}>{children}</LiveContext.Provider>;
 }
 
@@ -32,7 +32,7 @@ export const useLiveStatus = () => useContext(LiveContext).status;
 export function useLiveEvents(handler) {
   const { subscribe } = useContext(LiveContext);
   const ref = useRef(handler);
-  ref.current = handler;
+  useLayoutEffect(() => { ref.current = handler; });
   useEffect(() => {
     const unsub = subscribe((t, d) => ref.current(t, d));
     const onFocus = () => ref.current('refocus', {});

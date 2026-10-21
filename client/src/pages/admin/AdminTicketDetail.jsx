@@ -28,7 +28,8 @@ function Composer({ ticket, onSent }) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(null);
   const touched = useRef(false);
-  const lastMessageCount = useRef(ticket.messages.length);
+  // Thread length the current draft/composer is based on.
+  const [baseCount, setBaseCount] = useState(ticket.messages.length);
 
   async function loadDraft(force = false) {
     setDraftState('loading');
@@ -47,7 +48,7 @@ function Composer({ ticket, onSent }) {
   useEffect(() => { loadDraft(); }, [ticket.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // If the author writes again while the agent has the ticket open, offer a fresh draft.
-  const newAuthorMessage = ticket.messages.length > lastMessageCount.current && ticket.messages.at(-1)?.senderRole === 'author';
+  const newAuthorMessage = ticket.messages.length > baseCount && ticket.messages.at(-1)?.senderRole === 'author';
 
   async function send(status) {
     if (body.trim().length < 2) return;
@@ -58,7 +59,7 @@ function Composer({ ticket, onSent }) {
       setBody('');
       setFromDraft(false);
       touched.current = false;
-      lastMessageCount.current = res.ticket.messages.length;
+      setBaseCount(res.ticket.messages.length);
       setDraft(null);
       setDraftState('ready');
       onSent(res);
@@ -85,7 +86,7 @@ function Composer({ ticket, onSent }) {
         </div>
       </div>
       {newAuthorMessage && (
-        <div className="alert alert-info">The author just replied. <button className="link" onClick={() => { lastMessageCount.current = ticket.messages.length; loadDraft(true); }}>Draft a response to their new message</button></div>
+        <div className="alert alert-info">The author just replied. <button className="link" onClick={() => { setBaseCount(ticket.messages.length); loadDraft(true); }}>Draft a response to their new message</button></div>
       )}
       {draft?.checklist?.length > 0 && (
         <div className="checklist">
