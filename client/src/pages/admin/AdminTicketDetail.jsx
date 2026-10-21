@@ -38,7 +38,7 @@ function Composer({ ticket, onSent }) {
       setDraft(res.draft);
       setDraftState('ready');
       // Pre-fill the composer unless the agent already started typing.
-      if (!touched.current || force) { setBody(res.draft.content); setFromDraft(true); touched.current = false; }
+      if (!touched.current || force) { setBody(res.draft.content); setFromDraft(res.draft.source === 'ai' ? 'ai' : 'template'); touched.current = false; }
     } catch (err) {
       setDraftState('error');
       setError(err);
@@ -55,7 +55,7 @@ function Composer({ ticket, onSent }) {
     setSending(true);
     setError(null);
     try {
-      const res = await api.post(`/admin/tickets/${ticket.id}/messages`, { body: body.trim(), aiAssisted: fromDraft, ...(status ? { status } : {}) });
+      const res = await api.post(`/admin/tickets/${ticket.id}/messages`, { body: body.trim(), aiAssisted: fromDraft === 'ai', ...(status ? { status } : {}) });
       setBody('');
       setFromDraft(false);
       touched.current = false;
@@ -99,7 +99,7 @@ function Composer({ ticket, onSent }) {
         placeholder={closed ? 'Ticket is closed — change status to reply.' : 'Write a reply…'} />
       <ErrorBanner error={error} />
       <div className="form-actions">
-        <span className="muted small grow">{fromDraft ? 'Started from AI draft — review before sending.' : 'Manual reply.'} Visible to the author.</span>
+        <span className="muted small grow">{{ ai: 'Started from AI draft — review before sending.', template: 'Started from policy template — personalise before sending.' }[fromDraft] ?? 'Manual reply.'} Visible to the author.</span>
         <button className="btn" disabled={sending || closed || body.trim().length < 2} onClick={() => send('resolved')}>Send & resolve</button>
         <button className="btn btn-primary" disabled={sending || closed || body.trim().length < 2} onClick={() => send()}>{sending ? 'Sending…' : 'Send reply'}</button>
       </div>
