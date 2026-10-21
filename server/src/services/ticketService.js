@@ -241,15 +241,27 @@ export async function queueStats() {
 export async function getTicketForAdmin(id) {
   const row = await getTicketRow(id);
   if (!row) throw notFound('Ticket');
-  const [messages, notes, events] = await Promise.all([
+  const [messages, notes, events, bookRes] = await Promise.all([
     getMessages(id),
     query(`SELECT n.id, n.body, n.created_at, u.name AS admin_name FROM internal_notes n
            LEFT JOIN users u ON u.id = n.admin_id WHERE n.ticket_id=$1 ORDER BY n.created_at`, [id]),
     query(`SELECT e.id, e.type, e.from_value, e.to_value, e.created_at, u.name AS actor_name FROM ticket_events e
            LEFT JOIN users u ON u.id = e.actor_id WHERE e.ticket_id=$1 ORDER BY e.created_at, e.id`, [id]),
+    // Snapshot of the book in question so the agent has the numbers at hand.
+    row.book_id
+      ? query(`SELECT status, isbn, publication_date, mrp, total_copies_sold, total_royalty_earned, royalty_paid,
+                 royalty_pending, last_royalty_payout_date, print_partner, available_on FROM books WHERE id=$1`, [row.book_id])
+      : Promise.resolve({ rows: [] }),
   ]);
+  const b = bookRes.rows[0];
   return {
     ...toAdminView(row),
+    bookSnapshot: b ? {
+      status: b.status, isbn: b.isbn, publicationDate: b.publication_date, mrp: b.mrp,
+      copiesSold: b.total_copies_sold, royaltyEarned: b.total_royalty_earned, royaltyPaid: b.royalty_paid,
+      royaltyPending: b.royalty_pending, lastPayoutDate: b.last_royalty_payout_date,
+      printPartner: b.print_partner, availableOn: b.available_on,
+    } : null,
     messages,
     notes: notes.rows.map((n) => ({ id: n.id, body: n.body, adminName: n.admin_name, createdAt: n.created_at })),
     events: events.rows.map((e) => ({ id: e.id, type: e.type, from: e.from_value, to: e.to_value, actorName: e.actor_name, createdAt: e.created_at })),
